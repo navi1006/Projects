@@ -1,0 +1,334 @@
+/** Author: Navneet Magotra
+**/
+
+#ifndef SHAREDPTR_HPP_
+#define SHAREDPTR_HPP_
+
+#include<iostream>
+#include<atomic>
+#include<cstddef>
+
+
+namespace cs540
+{
+
+/**Class for reference counting**/
+class RefCount
+{
+public:
+    template <typename T> friend class SharedPtr;
+    std::atomic<int>* ref_count;
+
+    RefCount()
+    {
+        ref_count = new std::atomic<int>();
+    }
+    virtual ~RefCount()
+    {
+        delete ref_count;
+    }
+};
+
+
+/**Class for holding the type of data passed**/
+template<typename U>
+class RefObj: public RefCount
+{
+private:
+    U* obj;
+public:
+
+    RefObj(U* other)
+    {
+        obj = other;
+    }
+
+    ~RefObj()
+    {
+        delete obj;
+        obj = nullptr;
+    }
+};
+
+
+/**Shared Pointer class implementation**/
+template <typename T>
+class SharedPtr
+{
+public:
+    T* data;
+    RefCount *ref_obj;
+    SharedPtr():data(nullptr),ref_obj(nullptr) {}
+
+    template <typename U>
+    explicit SharedPtr(U *other)
+    {
+        ref_obj = new RefObj<U>(other);
+        data = static_cast<T*>(other);
+        ++(*(ref_obj->ref_count));
+    }
+
+  /**Copy Constructor - 1**/
+    SharedPtr(const SharedPtr& p)
+    {
+        data = p.get();
+        ref_obj = p.ref_obj;
+        if( ref_obj != nullptr)
+        {
+                ++(*(ref_obj->ref_count));
+        }
+}
+
+    /**Copy Constructor - 2**/
+    template <typename U>
+    SharedPtr(const SharedPtr<U> &p)
+    {
+       data = p.get();
+       ref_obj = p.ref_obj;
+        if( ref_obj != nullptr)
+            {
+                ++(*(ref_obj->ref_count));
+            }
+    }
+
+    /**Move Assignment operator 1 **/
+    SharedPtr(SharedPtr &&p)
+    {
+        data = p.get();
+        ref_obj = p.ref_obj;
+        p.data = nullptr;
+        p.ref_obj = nullptr;
+    }
+
+    /**Move Assignment operator 2 **/
+    template <typename U> SharedPtr(SharedPtr<U> &&p)
+    {
+        data = p.get();
+        ref_obj = p.ref_obj;
+        p.data = nullptr;
+        p.ref_obj = nullptr;
+    }
+
+
+    /**Copy Assignment operator 1**/
+    SharedPtr<T>& operator =(const SharedPtr<T>& sp)
+    {
+        if(this == &sp)
+        {
+            return *this;
+        }
+        if(ref_obj != nullptr && --(*(ref_obj->ref_count)) == 0)
+        {
+            delete ref_obj;
+            ref_obj = nullptr;
+            data = nullptr;
+        }
+        ref_obj = sp.ref_obj;
+        if(ref_obj != nullptr)
+        {
+            ++(*(ref_obj->ref_count));
+        }
+        data = sp.get();
+
+        return *this;
+    }
+
+
+    /**Copy Assignment operator 2**/
+    template <typename U>
+    SharedPtr<T> &operator=(const SharedPtr<U> &sp)
+    {
+        if(this == (SharedPtr<T>*)&sp)
+        {
+            return *this;
+        }
+        if(ref_obj != nullptr && --(*(ref_obj->ref_count)) == 0)
+        {
+            delete ref_obj;
+            ref_obj = nullptr;
+            data = nullptr;
+        }
+        ref_obj = (RefObj<T>*)sp.ref_obj;
+        if(ref_obj != nullptr)
+        {
+            ++(*(ref_obj->ref_count));
+        }
+        data = sp.get();
+        return *this;
+    }
+
+    /** Move Assignment Operator 1 **/
+    SharedPtr &operator=(SharedPtr &&sp)
+    {
+        std::cout << "inside move = \n";
+        if(ref_obj != nullptr && --(*(ref_obj->ref_count)) == 0)
+        {
+            delete ref_obj;
+            ref_obj = nullptr;
+            data = nullptr;
+        }
+            data = sp.get();
+            ref_obj = sp.ref_obj;
+            sp.data = nullptr;
+            sp.ref_obj = nullptr;
+            return *this;
+    }
+
+    /** Move Assignment Operator 2 **/
+    template <typename U>
+    SharedPtr &operator=(SharedPtr<U> &&sp)
+    {
+        if(ref_obj != nullptr && --(*(ref_obj->ref_count)) == 0)
+        {
+            delete ref_obj;
+            ref_obj = nullptr;
+            data = nullptr;
+        }
+        //data = static_cast<T*>(sp.get());
+        data = sp.get();
+        ref_obj = sp.ref_obj;
+        sp.data = nullptr;
+        sp.ref_obj = nullptr;
+        return *this;
+    }
+
+
+    ~SharedPtr()
+    {
+       if(ref_obj != nullptr && --(*(ref_obj->ref_count)) == 0)
+        {
+            delete ref_obj;
+            ref_obj = nullptr;
+            data = nullptr;
+        }
+
+    }
+
+
+    /** Modifiers Functions **/
+
+    void reset()
+    {
+        if(ref_obj != nullptr)
+        {
+            if(--(*(ref_obj->ref_count)) == 0)
+            {
+                    delete ref_obj;
+            }
+            ref_obj = nullptr;
+            data = nullptr;
+        }
+    }
+
+    template <typename U> void reset(U *p)
+    {
+        if(ref_obj != nullptr )
+        {
+            if(--(*(ref_obj->ref_count)) == 0)
+            {
+                delete ref_obj;
+            }
+            ref_obj = nullptr;
+            data = nullptr;
+        }
+        ref_obj = new RefObj<U>(p);
+        data = static_cast<U*>(p);
+        ++(*(ref_obj->ref_count));
+    }
+
+
+    /** Observers Functions **/
+
+    T* get() const
+    {
+        return data;
+    }
+
+    T& operator*()
+    {
+        return *data;
+    }
+
+    T* operator->()
+    {
+         return data;
+    }
+
+    explicit operator bool() const
+    {
+        return (data != nullptr);
+    }
+
+
+};
+
+/** Non-member (Free) Functions **/
+
+template <typename T1, typename T2>
+bool operator==(const SharedPtr<T1>& t1, const SharedPtr<T2>& t2)
+{
+    return ((t1.get() == t2.get()) || (t1 == nullptr && t2 == nullptr));
+}
+
+
+
+template <typename T1>
+bool operator==(const SharedPtr<T1> &t1, std::nullptr_t)
+{
+    return (!t1);
+}
+
+template <typename T2>
+bool operator==(std::nullptr_t, const SharedPtr<T2> &t2)
+{
+    return (!t2);
+}
+
+template <typename T1, typename T2>
+bool operator!=(const SharedPtr<T1> &t1, const SharedPtr<T2> &t2)
+{
+    return (!(t1==t2));
+}
+
+template <typename T1>
+bool operator!=(const SharedPtr<T1> &t1, std::nullptr_t)
+{
+    return (bool)t1;
+}
+
+template <typename T2>
+bool operator!=(std::nullptr_t, const SharedPtr<T2> &t2)
+{
+    return (bool)t2;
+}
+
+template <typename T, typename U>
+SharedPtr<T> static_pointer_cast(const SharedPtr<U> &sp)
+{
+    SharedPtr<T> s;
+    s.data = static_cast<T*>(sp.data);
+    s.ref_obj = sp.ref_obj;
+        if( s.ref_obj != nullptr)
+            {
+                ++(*(s.ref_obj->ref_count));
+            }
+    return s;
+}
+
+template <typename T, typename U>
+SharedPtr<T> dynamic_pointer_cast(const SharedPtr<U> &sp)
+{
+    //SharedPtr<T> s(sp);
+    SharedPtr<T> s;
+    s.data = dynamic_cast<T*>(sp.data);
+    s.ref_obj = sp.ref_obj;
+    if( s.ref_obj != nullptr)
+        {
+            ++(*(s.ref_obj->ref_count));
+        }
+    return s;
+}
+
+}
+
+#endif /* SHAREDPTR_HPP_ ***/
